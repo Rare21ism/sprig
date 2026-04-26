@@ -1,12 +1,11 @@
-import { playTune } from './tune'
 import { normalizeGameError } from './error'
-import { bitmaps, type NormalizedError } from '../state'
+import type { NormalizedError } from '../state'
 import type { PlayTuneRes } from '../../../engine/src/api'
 import { baseEngine, textToTune } from '../../../engine/src/base'
 import { webEngine } from '../../../engine/src/web'
+import { playTune } from '../../../engine/src/web/tune'
 import * as Babel from "@babel/standalone"
 import TransformDetectInfiniteLoop, { BuildDuplicateFunctionDetector, dissallowBackticksInDoubleQuotes } from '../custom-babel-transforms'
-import {logInfo} from "../../components/popups-etc/help";
 import { extractLegendBitmaps } from './legend-extractor'
 
 interface RunResult {
@@ -17,6 +16,7 @@ interface RunResult {
 interface RunGameOptions {
 	onConsole?: (entry: { args: any[], nums: number[], isErr: boolean }) => void
 	onBitmaps?: (bitmaps: [string, string][]) => void
+	isMuted?: () => boolean
 }
 
 function getErrorObject(): Error {
@@ -68,6 +68,7 @@ export function runGame(code: string, canvas: HTMLCanvasElement, onPageError: (e
 	const tunes: PlayTuneRes[] = []
 	const timeouts: number[] = []
 	const intervals: number[] = []
+	let currentBitmaps: [string, string][] = []
 
 	const errorListener = (event: ErrorEvent) => {
 		onPageError(normalizeGameError({ kind: 'page', error: event.error }))
@@ -99,15 +100,21 @@ export function runGame(code: string, canvas: HTMLCanvasElement, onPageError: (e
 			// @ts-ignore
 			if(JSON.stringify(_bitmaps) === "[null]") {
 				// @ts-ignore
-				bitmaps.value = [[]];
+				currentBitmaps = [[]];
 				throw new Error('The sprites passed into setLegend each need to be in square brackets, like setLegend([player, bitmap`...`]).')
 			} else {
-				bitmaps.value = _bitmaps;
+				currentBitmaps = _bitmaps;
 			}
-			options.onBitmaps?.(bitmaps.value)
-			return game.api.setLegend(...bitmaps.value)
+			options.onBitmaps?.(currentBitmaps)
+			return game.api.setLegend(...currentBitmaps)
 		},
 		playTune: (text: string, n: number) => {
+			if (options.isMuted?.()) {
+				return {
+					end() {},
+					isPlaying() { return false }
+				}
+			}
 			const tune = textToTune(text)
 			const playTuneRes = playTune(tune, n)
 			tunes.push(playTuneRes)
@@ -125,7 +132,6 @@ export function runGame(code: string, canvas: HTMLCanvasElement, onPageError: (e
 					isErr: false
 				}
 				options.onConsole?.(entry)
-				logInfo.value = [...logInfo.value, entry]
 			},
 			error: (...args: any[]) => {
 				console.error(...args)
@@ -137,19 +143,17 @@ export function runGame(code: string, canvas: HTMLCanvasElement, onPageError: (e
 					isErr: true
 				}
 				options.onConsole?.(entry)
-				logInfo.value = [...logInfo.value, entry]
 			}
 		}
 	}
 
     const engineAPIKeys = Object.keys(api);
 	return { error: transformAndThrowErrors(code, engineAPIKeys, (transformedCode) => {
-		logInfo.value = [];
 		const fn = new Function(...engineAPIKeys, transformedCode.code!)
 		fn(...Object.values(api))
 	}), cleanup };
 }
 
 export function runGameHeadless(code: string): void {
-	bitmaps.value = extractLegendBitmaps(code)
+	extractLegendBitmaps(code)
 }

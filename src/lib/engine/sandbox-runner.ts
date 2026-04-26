@@ -1,4 +1,4 @@
-import { muted, type NormalizedError } from '../state'
+import type { NormalizedError } from '../state'
 import { runGame } from '.'
 import {
 	type ParentToSandboxMessage,
@@ -13,6 +13,7 @@ if (!canvas) throw new Error('Missing Sprig sandbox canvas')
 
 let channelId: string | null = null
 let cleanup: (() => void) | undefined
+let isMuted = false
 
 const serializeError = (error: NormalizedError): NormalizedError => ({
 	description: error.description,
@@ -50,7 +51,7 @@ const stopGame = (): void => {
 
 const run = (message: Extract<ParentToSandboxMessage, { type: 'RUN_GAME' }>): void => {
 	stopGame()
-	muted.value = message.muted
+	isMuted = message.muted
 
 	const result = runGame(
 		message.code,
@@ -65,6 +66,7 @@ const run = (message: Extract<ParentToSandboxMessage, { type: 'RUN_GAME' }>): vo
 				isErr,
 			}),
 			onBitmaps: (bitmaps) => post({ type: 'BITMAPS_CHANGED', channelId: message.channelId, bitmaps }),
+			isMuted: () => isMuted,
 		}
 	)
 
@@ -96,7 +98,7 @@ window.addEventListener('message', (event) => {
 			canvas.dispatchEvent(new KeyboardEvent('keydown', { key: message.key }))
 			break
 		case 'MUTE_CHANGED':
-			muted.value = message.muted
+			isMuted = message.muted
 			break
 	}
 })
